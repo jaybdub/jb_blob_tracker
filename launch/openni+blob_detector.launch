@@ -1,0 +1,4 @@
+<launch>
+	<include file="$(find openni_launch)/launch/openni.launch"/>
+	<include file="$(find jb_blob_tracker)/launch/blob_detector.launch"/>
+</launch>

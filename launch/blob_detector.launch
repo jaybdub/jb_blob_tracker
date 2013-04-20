@@ -1,0 +1,46 @@
+<launch>
+	<arg name="rgbImageTopic" default="/camera/rgb/image_color/compressed"/>
+	<arg name="detectedBlobListTopic" default="/jb_blob_tracker/detectedBlobList"/>;
+
+	<arg name="minArea" default="250.0"/>
+	<arg name="maxArea" default="50000.0"/>
+	<arg name="minDistBetweenBlobs" default="100.0"/>
+	<arg name="blobMeasurementVariance" default="2000.0"/>
+	<arg name="blurImage" default="true"/>
+	<arg name="blurKernelSize" default="9"/>
+
+	<!-- min and max HSV values take only values between 0 and 255 and will be cut down in program -->
+	<arg name="minColorHue" default="45"/>
+	<arg name="maxColorHue" default="55"/>
+	<arg name="minColorSaturation" default="30"/>
+	<arg name="maxColorSaturation" default="255"/>
+	<arg name="minColorValue" default="100"/>
+	<arg name="maxColorValue" default="255"/>
+	<node pkg="jb_blob_tracker" name="blob_detector"
+			type="blob_detector" respawn="true" output="screen">
+
+		<!-- constant params --> 
+		<param name="filterByInertia" type="bool" value="false"/>
+		<param name="filterByColor" type="bool" value="false"/>
+		<param name="filterByConvexity" type="bool" value="false"/>
+		<param name="filterByCircularity" type="bool" value="false"/>
+		<param name="filterByArea" type="bool" value="true"/>
+
+		<!-- variable params -->
+		<param name="rgbImageTopic" type="str" value="$(arg rgbImageTopic)"/>
+		<param name="detectedBlobListTopic" type="str" value="$(arg detectedBlobListTopic)"/>
+
+		<param name="minArea" type="double" value="$(arg minArea)"/>
+		<param name="maxArea" type="double" value="$(arg maxArea)"/>
+		<param name="minDistBetweenBlobs" type="double" value="$(arg minDistBetweenBlobs)"/>
+		<param name="blurImage" type="bool" value="$(arg blurImage)"/>
+		<param name="blurKernelSize" type="int" value="$(arg blurKernelSize)"/>
+		<param name="minColorHue" type="int" value="$(arg minColorHue)"/>
+		<param name="maxColorHue" type="int" value="$(arg maxColorHue)"/>
+		<param name="minColorSaturation" type="int" value="$(arg minColorSaturation)"/>
+		<param name="maxColorSaturation" type="int" value="$(arg maxColorSaturation)"/>
+		<param name="minColorValue" type="int" value="$(arg minColorValue)"/>
+		<param name="maxColorValue" type="int" value="$(arg maxColorValue)"/>
+		<param name="blobMeasurementVariance" type="double" value="$(arg blobMeasurementVariance)"/>	
+	</node>
+</launch>

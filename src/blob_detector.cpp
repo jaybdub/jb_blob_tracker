@@ -1,0 +1,222 @@
+#include <ros/ros.h>
+#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/image_encodings.h>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/features2d/features2d.hpp>
+#include <vector>
+
+//Custom messages
+#include <jb_blob_tracker/blob.h>
+#include <jb_blob_tracker/blobList.h>
+
+namespace enc = sensor_msgs::image_encodings;
+
+	static const char WINDOW[] = "Image window 1";
+	static const char WINDOW2[] = "Image window 2";
+	class BlobDetector
+	{
+
+	private:
+		ros::NodeHandle root_nh_;
+		ros::NodeHandle priv_nh_;
+
+		image_transport::ImageTransport it_;
+		image_transport::Subscriber image_sub_;
+
+		cv::SimpleBlobDetector::Params blobDetectorParams_;
+		cv::Ptr<cv::FeatureDetector> blobDetector_;
+		std::vector<cv::KeyPoint> keypoints_;
+
+		ros::Publisher blobList_pub_;
+		std::string detectedBlobListTopic_;
+		//Detector parameters
+		bool filterByInertia_;
+		bool filterByConvexity_;
+		bool filterByColor_;
+		bool filterByCircularity_;
+		bool filterByArea_;
+		double minArea_;
+		double maxArea_;
+		double minDistBetweenBlobs_;
+		double blobMeasurementVariance_;
+		std::string rgbImageTopic_;
+		//Color filter parameters
+		int minColorHue_;
+		int maxColorHue_;
+		int minColorSaturation_;
+		int maxColorSaturation_;
+		int minColorValue_;
+		int maxColorValue_;
+		bool blurImage_;
+		int blurKernelSize_;
+	public:
+		BlobDetector()
+			: root_nh_("")
+			, priv_nh_("~")
+			, it_(root_nh_)
+		{
+			priv_nh_.param<std::string>("rgbImageTopic",rgbImageTopic_,"/camera/rgb/image_color");
+			//Initialize image subscriber
+			image_sub_ = it_.subscribe(rgbImageTopic_, 1, &BlobDetector::imageCb, this);
+			
+			//Initialize first image window
+			cv::namedWindow(WINDOW);
+
+			//Initialize second image window
+			cv::namedWindow(WINDOW2);
+			priv_nh_.param<std::string>("detectedBlobListTopic",detectedBlobListTopic_,"/jb_blob_tracker/detectedBlobList");
+			blobList_pub_ = root_nh_.advertise<jb_blob_tracker::blobList>(detectedBlobListTopic_,1);
+			
+			//Set up parameters
+			priv_nh_.param<bool>("filterByInertia",filterByInertia_,false);
+			priv_nh_.param<bool>("filterByConvexity",filterByConvexity_,false);
+			priv_nh_.param<bool>("filterByColor",filterByColor_,false);
+			priv_nh_.param<bool>("filterByCircularity",filterByCircularity_,false);
+			priv_nh_.param<bool>("filterByArea",filterByArea_,true);
+			priv_nh_.param<double>("minArea",minArea_,100.0);
+			priv_nh_.param<double>("maxArea",maxArea_,10000.0);
+			priv_nh_.param<double>("minDistBetweenBlobs",minDistBetweenBlobs_,50.0);
+			priv_nh_.param<double>("blobMeasurementVariance",blobMeasurementVariance_,2000.0);
+			//Announce initial parameters
+			ROS_INFO("param filterByInertia %d", (int)filterByInertia_);
+			ROS_INFO("param filterByConvexity %d", (int)filterByConvexity_);
+			ROS_INFO("param filterByColor %d", (int)filterByColor_);
+			ROS_INFO("param filterByCircularity %d", (int)filterByCircularity_);
+			ROS_INFO("param filterByArea %d", (int)filterByArea_);
+			ROS_INFO("param minDistBetweenBlobs %f", (float)minDistBetweenBlobs_);
+			ROS_INFO("param minArea %f", (float)minArea_);
+			ROS_INFO("param maxArea %f", (float)maxArea_);
+			ROS_INFO("param blobMeasurementVariance = %f",(float)blobMeasurementVariance_);
+			//HSV parameters
+			priv_nh_.param<int>("minColorHue",minColorHue_,45);
+			priv_nh_.param<int>("maxColorHue",maxColorHue_,65);
+			priv_nh_.param<int>("minColorSaturation",minColorSaturation_,100);
+			priv_nh_.param<int>("maxColorSaturation",maxColorSaturation_,255);
+			priv_nh_.param<int>("minColorValue",minColorValue_,10);
+			priv_nh_.param<int>("maxColorValue",maxColorValue_,255);
+			//Clip the values between 0 and 255
+			minColorHue_ = (minColorHue_ < 0 ? 0 : minColorHue_);
+		   	minColorHue_ = (minColorHue_ > 255 ? 255 : minColorHue_);
+			maxColorHue_ = (maxColorHue_ < 0 ? 0 : maxColorHue_);
+			maxColorHue_ = (maxColorHue_ > 255 ? 255 : maxColorHue_);
+			minColorSaturation_ = (minColorSaturation_ < 0 ? 0 : minColorSaturation_);
+			minColorSaturation_ = (minColorSaturation_ > 255 ? 255 : minColorSaturation_);
+			maxColorSaturation_ = (maxColorSaturation_ < 0 ? 0 : maxColorSaturation_);
+			maxColorSaturation_ = (maxColorSaturation_ > 255 ? 255 : maxColorSaturation_);
+			minColorValue_ = (minColorValue_ < 0 ? 0 : minColorValue_);
+			minColorValue_ = (minColorValue_ > 255 ? 255 : minColorValue_);
+			maxColorValue_ = (maxColorValue_ < 0 ? 0 : maxColorValue_);
+			maxColorValue_ = (maxColorValue_ > 255 ? 255 : maxColorValue_);
+
+			ROS_INFO("param minColorHue = %d", minColorHue_);
+			ROS_INFO("param maxColorHue = %d", maxColorHue_);
+			ROS_INFO("param minColorSaturation = %d", minColorSaturation_);
+			ROS_INFO("param maxColorSaturation = %d", maxColorSaturation_);
+			ROS_INFO("param minColorValue = %d", minColorValue_);
+			ROS_INFO("param maxColorValue = %d", maxColorValue_);
+
+			//Blur parameters
+			priv_nh_.param<bool>("blurImage",blurImage_,true);
+			priv_nh_.param<int>("blurKernelSize",blurKernelSize_,9);
+			ROS_INFO("param blurImage = %d",(int)blurImage_);
+			ROS_INFO("param blurKernelSize = %d",(int)blurKernelSize_);
+			//Set blob detector parameters
+			blobDetectorParams_.minDistBetweenBlobs = (float)minDistBetweenBlobs_;
+			blobDetectorParams_.filterByInertia = filterByInertia_;
+			blobDetectorParams_.filterByConvexity = filterByConvexity_;
+			blobDetectorParams_.filterByColor = filterByColor_;
+			blobDetectorParams_.filterByCircularity = filterByCircularity_;
+			blobDetectorParams_.filterByArea = filterByArea_;
+			blobDetectorParams_.minArea = (float)minArea_;
+			blobDetectorParams_.maxArea = (float)maxArea_;
+
+			blobDetector_ =  new cv::SimpleBlobDetector(blobDetectorParams_);
+			blobDetector_->create("SimpleBlobDetector");
+
+		}
+		~BlobDetector()
+		{
+			cv::destroyWindow(WINDOW);
+			cv::destroyWindow(WINDOW2);
+		}
+
+		void imageCb(const sensor_msgs::ImageConstPtr& msg)
+		{
+		//Convert image from ROS to OpenCV type
+			cv_bridge::CvImagePtr cv_ptr;
+			try
+			{
+					cv_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);
+			}
+			catch(cv_bridge::Exception& e)
+			{
+					ROS_ERROR("cv_bridge exception: %s",e.what());
+					return;
+			}
+		//Detection code:
+			//Mean blur the image using a 9x9 kernel
+			if(blurImage_){
+				cv::blur(cv_ptr->image, cv_ptr->image, cv::Size(blurKernelSize_,blurKernelSize_));
+			}
+			//Initialize the HSV image
+			cv::Mat imageHsv;
+			//Convert the BGR formatted image to HSV formate
+			cv::cvtColor(cv_ptr->image, imageHsv, CV_BGR2HSV);
+			//Initialize the threshold image
+			cv::Mat imageBin;
+			//Pass pixels in hue range to binary threshold image
+			cv::inRange(imageHsv,
+							cv::Scalar(minColorHue_,minColorSaturation_,minColorValue_),
+						 	cv::Scalar(maxColorHue_,maxColorSaturation_,maxColorValue_),
+						   	imageBin);
+			//Detect blobs using SimpleBlobDetector
+			blobDetector_->detect(imageBin, keypoints_);
+			
+		//Package and publish:
+			if(keypoints_.size()>0){
+				//Grab time of measurement
+				ros::Time timeNow = ros::Time::now();
+				//Initialize list of detected blobs
+				std::vector<jb_blob_tracker::blob> blobVector;
+				//Fill list of detected blobs with keypoint data
+				for(int i=0;i<keypoints_.size();i++){
+						jb_blob_tracker::blob detectedBlob;
+						detectedBlob.x = keypoints_.at(i).pt.x;
+						detectedBlob.y = keypoints_.at(i).pt.y;
+						detectedBlob.size = keypoints_.at(i).size;
+						detectedBlob.variance = blobMeasurementVariance_;
+						detectedBlob.header.stamp = timeNow;
+						detectedBlob.ID = -1;//negative value indicates unidentified blob
+						blobVector.push_back(detectedBlob);
+				}
+				//Initialize outgoing blobList message
+				jb_blob_tracker::blobList blobListMsg;
+				//Fill blobList message
+				blobListMsg.blobVector = blobVector;
+				blobListMsg.length = blobVector.size();
+				blobListMsg.header.stamp = timeNow;
+			//	ROS_INFO("Detected %d blobs",blobListMsg.length);
+				blobList_pub_.publish(blobListMsg);	
+			}
+		//Display code:
+			//Draw the center of the detected blobs on the threshold image
+			cv::drawKeypoints(imageBin, keypoints_, imageBin, CV_RGB(.5,.5,.5));
+			//Display threshold image in window 1
+			cv::imshow(WINDOW, imageBin);
+			//Display RGB image in window 2
+			cv::imshow(WINDOW2, cv_ptr->image);
+			cv::waitKey(3);
+		}
+	};
+
+
+int main(int argc, char** argv)
+{
+		ros::init(argc, argv, "blob_detector");
+		BlobDetector bd;
+		ros::spin();
+		return 0;
+}
+

@@ -1,0 +1,20 @@
+<package>
+  <description brief="jb_blob_tracker">
+
+     jb_blob_tracker
+
+  </description>
+  <author>John</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/jb_blob_tracker</url>
+  <depend package="sensor_msgs"/>
+  <depend package="opencv2"/>
+  <depend package="cv_bridge"/>
+  <depend package="roscpp"/>
+  <depend package="std_msgs"/>
+  <depend package="image_transport"/>
+
+</package>
+
+
